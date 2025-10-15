@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI RPG 测试系统</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 配置页面 -->
+        <div id="config-page" class="page active">
+            <div class="container">
+                <h1>AI RPG 测试系统 - 配置</h1>
+                
+                <div class="config-section">
+                    <h2>OpenAI 配置</h2>
+                    <div class="form-group">
+                        <label for="api-key">API Key:</label>
+                        <input type="password" id="api-key" placeholder="输入你的 OpenAI API Key" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="model-select">选择模型:</label>
+                        <select id="model-select">
+                            <option value="gpt-4o">GPT-4o</option>
+                            <option value="gpt-4o-mini">GPT-4o-mini</option>
+                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h2>模块配置</h2>
+                    
+                    <!-- 对话模块 -->
+                    <div class="module-config">
+                        <h3>Module 1: 对话模块</h3>
+                        <div class="form-group">
+                            <label for="module1-prompt">System Prompt:</label>
+                            <textarea id="module1-prompt" rows="4" placeholder="输入对话模块的 system prompt">你是一个资深的游戏DM（Dungeon Master），负责控制NPC的对话和行为。根据故事背景、NPC列表和目标，以及玩家的输入，指挥NPC进行对话。
+
+重要原则：
+- 记住之前的对话内容，保持对话的连贯性和一致性
+- NPC会记得之前说过的话和发生的事情
+- 根据语境判断应该让几个NPC回应（可以是1个、2个或更多）
+- 不是所有NPC都必须每次说话，要符合实际情况
+- 如果玩家只对某个NPC说话，通常只需要那个NPC回应
+- 如果是群体对话或引发争论，可以多个NPC回应
+
+返回格式：每个回应的NPC都要包括NPC名字、说话内容、情绪动画（从以下选择：高兴、难过、失望、振奋、绝望、疯狂、希望、平静）。</textarea>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" id="module1-json">
+                                启用 JSON Mode
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 总结模块 -->
+                    <div class="module-config">
+                        <h3>Module 2: 总结模块</h3>
+                        <div class="form-group">
+                            <label for="module2-prompt">System Prompt:</label>
+                            <textarea id="module2-prompt" rows="4" placeholder="输入总结模块的 system prompt">你是一个故事总结专家。根据故事背景、NPC目标和玩家与NPC的聊天记录，总结当前场景的故事发展。
+
+请提供一个简洁但全面的总结，包括关键事件、角色发展和重要决策。</textarea>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" id="module2-json">
+                                启用 JSON Mode
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 故事模块 -->
+                    <div class="module-config">
+                        <h3>Module 3: 故事模块</h3>
+                        <div class="form-group">
+                            <label for="module3-prompt">System Prompt:</label>
+                            <textarea id="module3-prompt" rows="4" placeholder="输入故事模块的 system prompt">你是一个创意故事作家。根据上一幕的故事总结、NPC列表和他们的目标，续写下一幕发生的事情。
+
+请生成：
+1. 下一幕的场景描述和发生的事件
+2. 一个主要NPC的初始对话（包括NPC名字、对话内容、动作描述）</textarea>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" id="module3-json">
+                                启用 JSON Mode
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="start-btn" class="primary-btn">开始</button>
+            </div>
+        </div>
+
+        <!-- 场景初始化页面 -->
+        <div id="scene-init-page" class="page">
+            <div class="container">
+                <h1>场景初始化</h1>
+                
+                <div class="form-group">
+                    <label for="story-summary">故事的总结:</label>
+                    <textarea id="story-summary" rows="4" placeholder="输入当前故事的总结..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="npc-list">NPC 的 List:</label>
+                    <textarea id="npc-list" rows="3" placeholder="输入NPC列表（每行一个，例如：张三、李四、王五）"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="npc-goals">这一幕中 NPC 的 Goal:</label>
+                    <textarea id="npc-goals" rows="3" placeholder="输入NPC在这一幕中的目标..."></textarea>
+                </div>
+
+                <button id="begin-dialogue-btn" class="primary-btn">开始对话</button>
+            </div>
+        </div>
+
+        <!-- 对话页面 -->
+        <div id="dialogue-page" class="page">
+            <div class="container">
+                <h1>对话场景</h1>
+                
+                <div class="scene-info">
+                    <div class="info-item">
+                        <strong>故事背景:</strong>
+                        <p id="display-story-summary"></p>
+                    </div>
+                    <div class="info-item">
+                        <strong>NPC列表:</strong>
+                        <p id="display-npc-list"></p>
+                    </div>
+                    <div class="info-item">
+                        <strong>NPC目标:</strong>
+                        <p id="display-npc-goals"></p>
+                    </div>
+                </div>
+
+                <div id="chat-container" class="chat-container">
+                    <div id="messages"></div>
+                </div>
+
+                <div class="input-area">
+                    <textarea id="user-input" placeholder="输入你的对话..." rows="3"></textarea>
+                    <div class="button-group">
+                        <button id="send-btn" class="primary-btn">发送</button>
+                        <button id="end-dialogue-btn" class="secondary-btn">结束对话</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 总结和故事生成页面 -->
+        <div id="summary-page" class="page">
+            <div class="container">
+                <h1>场景总结与下一幕</h1>
+                
+                <div class="summary-section">
+                    <h2>场景总结</h2>
+                    <div id="scene-summary" class="content-box loading">
+                        <p>正在生成总结...</p>
+                    </div>
+                </div>
+
+                <div class="summary-section">
+                    <h2>下一幕故事</h2>
+                    <div id="next-scene" class="content-box loading">
+                        <p>正在生成下一幕...</p>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button id="next-scene-btn" class="primary-btn" disabled>下一幕</button>
+                    <button id="back-to-config-btn" class="secondary-btn">返回配置</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 加载提示 -->
+        <div id="loading-overlay" class="loading-overlay">
+            <div class="spinner"></div>
+            <p>AI 正在思考...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
