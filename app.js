@@ -173,7 +173,104 @@ document.getElementById('begin-dialogue-btn').addEventListener('click', () => {
 
     // 跳转到对话页面
     showPage('dialogue');
+    
+    // 如果有故事模块生成的初始对话（第二幕及以后），显示它
+    // 否则生成新的初始问候（第一幕）
+    if (state.scene.nextNPCDialogue) {
+        displayStoredNPCDialogue();
+    } else {
+        generateInitialGreeting();
+    }
 });
+
+// 显示存储的NPC初始对话（来自故事模块）
+function displayStoredNPCDialogue() {
+    const dialogue = state.scene.nextNPCDialogue;
+    
+    if (!dialogue) {
+        // 如果没有存储的对话，生成新的
+        generateInitialGreeting();
+        return;
+    }
+    
+    // 如果是JSON格式
+    if (dialogue.npc_name && dialogue.content) {
+        addMessage('npc', dialogue.content, dialogue.npc_name, dialogue.emotion || '平静');
+        // 保存到历史记录（JSON格式）
+        state.scene.chatHistory.push({ 
+            role: 'npc', 
+            content: JSON.stringify({
+                npc_name: dialogue.npc_name,
+                content: dialogue.content,
+                emotion: dialogue.emotion || '平静'
+            })
+        });
+    } 
+    // 如果是文本格式
+    else if (dialogue.raw) {
+        parseNPCResponse(dialogue.raw, false);
+        state.scene.chatHistory.push({ role: 'npc', content: dialogue.raw });
+    }
+    
+    // 清除已使用的初始对话
+    state.scene.nextNPCDialogue = null;
+}
+
+// 生成初始问候函数
+async function generateInitialGreeting() {
+    showLoading(true);
+    
+    try {
+        // 构建提示词
+        const greetingPrompt = `
+故事背景：${state.scene.storySummary}
+
+NPC列表：${state.scene.npcList}
+
+NPC目标：${state.scene.npcGoals}
+
+请选择一个最合适的NPC来主动问候玩家，问候内容要与故事背景相关。
+
+返回格式：
+${state.modules.dialogue.jsonMode ? 
+`JSON格式：
+{
+  "npc_name": "NPC名字",
+  "content": "问候内容",
+  "emotion": "情绪动画（高兴/难过/失望/振奋/绝望/疯狂/希望/平静）"
+}` : 
+`格式：[NPC名字] 问候内容 [情绪：情绪动画]
+情绪动画从以下选择：高兴、难过、失望、振奋、绝望、疯狂、希望、平静`}
+`;
+
+        const response = await callOpenAI(
+            state.modules.dialogue.prompt,
+            greetingPrompt,
+            state.modules.dialogue.jsonMode
+        );
+
+        // 解析并显示问候
+        if (state.modules.dialogue.jsonMode) {
+            try {
+                const data = JSON.parse(response);
+                addMessage('npc', data.content, data.npc_name, data.emotion);
+                state.scene.chatHistory.push({ role: 'npc', content: response });
+            } catch (error) {
+                console.error('JSON 解析错误:', error);
+                parseNPCResponse(response, false);
+                state.scene.chatHistory.push({ role: 'npc', content: response });
+            }
+        } else {
+            parseNPCResponse(response, false);
+            state.scene.chatHistory.push({ role: 'npc', content: response });
+        }
+        
+    } catch (error) {
+        console.error('生成初始问候错误:', error);
+    } finally {
+        showLoading(false);
+    }
+}
 
 // 对话页面逻辑
 document.getElementById('send-btn').addEventListener('click', async () => {
@@ -381,7 +478,7 @@ NPC的目标：${state.scene.npcGoals}
 
 请根据上述信息：
 1. 续写下一幕发生的事情
-2. 生成一个主要NPC的初始对话（包括NPC名字、对话内容、动作描述）
+2. 生成一个主要NPC的初始对话（包括NPC名字、对话内容、情绪动画）
 
 ${state.modules.story.jsonMode ? 
 `返回JSON格式：
@@ -390,7 +487,7 @@ ${state.modules.story.jsonMode ?
   "npc_dialogue": {
     "npc_name": "NPC名字",
     "content": "对话内容",
-    "action": "动作描述"
+    "emotion": "情绪动画（高兴/难过/失望/振奋/绝望/疯狂/希望/平静）"
   }
 }` : 
 `返回格式：
@@ -398,8 +495,8 @@ ${state.modules.story.jsonMode ?
 下一幕的场景描述...
 
 【NPC初始对话】
-NPC名字：对话内容
-动作：动作描述`}
+[NPC名字] 对话内容 [情绪：情绪动画]
+情绪动画从以下选择：高兴、难过、失望、振奋、绝望、疯狂、希望、平静`}
 `;
 
         const storyResponse = await callOpenAI(
@@ -437,17 +534,19 @@ function displayNextScene(response, isJson, updatedStorySummary) {
                 <div class="npc-dialogue">
                     <div class="npc-name">${escapeHtml(data.npc_dialogue.npc_name || '')}</div>
                     <div class="dialogue-content">${escapeHtml(data.npc_dialogue.content || '')}</div>
-                    <div class="action">动作：${escapeHtml(data.npc_dialogue.action || '')}</div>
+                    <div class="npc-emotion">情绪：${escapeHtml(data.npc_dialogue.emotion || '平静')}</div>
                 </div>
                 ` : ''}
             `;
             
-            // 保存下一幕的故事总结
+            // 保存下一幕的故事总结和NPC初始对话
             state.scene.nextStorySummary = data.scene_description || updatedStorySummary;
+            state.scene.nextNPCDialogue = data.npc_dialogue || null;
         } catch (error) {
             console.error('JSON 解析错误:', error);
             nextSceneDiv.textContent = response;
             state.scene.nextStorySummary = updatedStorySummary;
+            state.scene.nextNPCDialogue = null;
         }
     } else {
         // 解析文本格式
@@ -469,11 +568,19 @@ function displayNextScene(response, isJson, updatedStorySummary) {
         }
 
         if (npcMatch) {
+            const npcText = npcMatch[1].trim();
             html += `
                 <div class="npc-dialogue">
-                    ${escapeHtml(npcMatch[1].trim()).replace(/\n/g, '<br>')}
+                    ${escapeHtml(npcText).replace(/\n/g, '<br>')}
                 </div>
             `;
+            
+            // 保存NPC对话用于下一幕
+            state.scene.nextNPCDialogue = {
+                raw: npcText
+            };
+        } else {
+            state.scene.nextNPCDialogue = null;
         }
 
         nextSceneDiv.innerHTML = html || escapeHtml(response);
