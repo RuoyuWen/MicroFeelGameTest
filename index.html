@@ -55,6 +55,7 @@
                                 <input type="checkbox" id="module1-json">
                                 启用 JSON Mode
                             </label>
+                            <span style="margin-left: 10px; font-size: 0.85em; color: #666;">（勾选后自动添加JSON提示）</span>
                         </div>
                     </div>
 
@@ -72,6 +73,7 @@
                                 <input type="checkbox" id="module2-json">
                                 启用 JSON Mode
                             </label>
+                            <span style="margin-left: 10px; font-size: 0.85em; color: #666;">（勾选后自动添加JSON提示）</span>
                         </div>
                     </div>
 
@@ -95,6 +97,38 @@ NPC初始对话格式要求：
                             <label>
                                 <input type="checkbox" id="module3-json">
                                 启用 JSON Mode
+                            </label>
+                            <span style="margin-left: 10px; font-size: 0.85em; color: #666;">（勾选后自动添加JSON提示）</span>
+                        </div>
+                    </div>
+
+                    <!-- 记忆模块 -->
+                    <div class="module-config">
+                        <h3>Module 4: 记忆模块 🧠</h3>
+                        <div class="form-group">
+                            <label for="module4-prompt">System Prompt:</label>
+                            <textarea id="module4-prompt" rows="6" placeholder="输入记忆模块的 system prompt">你是一个智能记忆管理助手，负责维护玩家的记忆档案。
+
+你的任务是分析玩家和NPC的对话，提取关键信息并更新玩家记忆。
+
+提取的信息类型：
+1. 玩家信息（名字、职业、外貌、性格、背景）
+2. 与NPC的关系变化（互动、信任度1-10）
+3. 目标和承诺（玩家的目标、做出的承诺）
+4. 重要事件（关键的故事发展）
+5. 物品和技能（装备、能力）
+6. 秘密线索（发现的隐藏信息）
+
+原则：
+- 只记录明确提到的内容，不杜撰
+- 新增而不是覆盖已有信息（除非明确更新）
+- 保持客观，不添加主观解释
+- 返回JSON格式的更新指令</textarea>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" id="module4-enabled" checked>
+                                启用记忆系统
                             </label>
                         </div>
                     </div>
@@ -131,7 +165,10 @@ NPC初始对话格式要求：
         <!-- 对话页面 -->
         <div id="dialogue-page" class="page">
             <div class="container">
-                <h1>对话场景</h1>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h1>对话场景</h1>
+                    <button id="view-memory-btn" class="secondary-btn" style="margin-bottom: 1rem;">📋 查看玩家记忆</button>
+                </div>
                 
                 <div class="scene-info">
                     <div class="info-item">
@@ -192,6 +229,24 @@ NPC初始对话格式要求：
         <div id="loading-overlay" class="loading-overlay">
             <div class="spinner"></div>
             <p>AI 正在思考...</p>
+        </div>
+
+        <!-- 玩家记忆查看模态框 -->
+        <div id="memory-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🧠 玩家记忆档案</h2>
+                    <span class="close-modal" id="close-memory-modal">&times;</span>
+                </div>
+                <div class="modal-body" id="memory-display">
+                    <!-- 记忆内容将通过JavaScript填充 -->
+                </div>
+                <div class="modal-footer">
+                    <button id="export-memory-btn" class="secondary-btn">📥 导出</button>
+                    <button id="clear-memory-btn" class="secondary-btn" style="color: #d32f2f;">🗑️ 清空记忆</button>
+                    <button id="close-memory-btn" class="primary-btn">关闭</button>
+                </div>
+            </div>
         </div>
     </div>
 

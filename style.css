@@ -412,6 +412,275 @@ h3 {
     background: #bdc3c7;
 }
 
+/* 模态框样式 */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    animation: fadeIn 0.3s;
+}
+
+.modal.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: white;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 800px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-50px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-header {
+    padding: 20px 30px;
+    border-bottom: 2px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+    padding: 0;
+    border: none;
+    color: var(--primary-color);
+}
+
+.close-modal {
+    font-size: 32px;
+    color: #aaa;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.3s;
+}
+
+.close-modal:hover {
+    color: var(--text-color);
+}
+
+.modal-body {
+    padding: 30px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+    background: var(--bg-color);
+    border-radius: 10px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 10px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background: #bdc3c7;
+}
+
+.modal-footer {
+    padding: 15px 30px;
+    border-top: 2px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* 记忆显示样式 */
+.memory-section {
+    margin-bottom: 25px;
+    padding: 20px;
+    background: var(--bg-color);
+    border-radius: 10px;
+}
+
+.memory-section h3 {
+    color: var(--primary-color);
+    margin-bottom: 15px;
+    font-size: 1.1em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.memory-section .empty {
+    color: #95a5a6;
+    font-style: italic;
+}
+
+.memory-item {
+    background: white;
+    padding: 12px 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    border-left: 3px solid var(--secondary-color);
+}
+
+.memory-item:last-child {
+    margin-bottom: 0;
+}
+
+.memory-item .label {
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 3px;
+}
+
+.memory-item .value {
+    color: #555;
+    line-height: 1.5;
+}
+
+.memory-item .meta {
+    font-size: 0.85em;
+    color: #95a5a6;
+    margin-top: 5px;
+}
+
+.relationship-item {
+    background: white;
+    padding: 12px 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.relationship-item .npc-name {
+    font-weight: 600;
+    color: var(--secondary-color);
+    margin-bottom: 5px;
+}
+
+.relationship-item .relationship-type {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 15px;
+    font-size: 0.85em;
+    margin-right: 8px;
+}
+
+.relationship-item .relationship-type.friendly {
+    background: #d4edda;
+    color: #155724;
+}
+
+.relationship-item .relationship-type.hostile {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.relationship-item .relationship-type.neutral {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.relationship-item .relationship-type.ally {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.relationship-item .trust-level {
+    font-size: 0.9em;
+    color: #666;
+}
+
+.relationship-item .interactions {
+    margin-top: 8px;
+    padding-left: 15px;
+}
+
+.relationship-item .interactions li {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 3px;
+}
+
+.goal-item {
+    background: white;
+    padding: 12px 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.goal-item .status-icon {
+    font-size: 1.2em;
+    flex-shrink: 0;
+}
+
+.goal-item.active .status-icon {
+    color: #f39c12;
+}
+
+.goal-item.completed .status-icon {
+    color: #27ae60;
+}
+
+.goal-item.failed .status-icon {
+    color: #e74c3c;
+}
+
+.goal-item .goal-content {
+    flex: 1;
+}
+
+.goal-item .goal-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.75em;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.goal-item .goal-type.goal {
+    background: #ffeaa7;
+    color: #d63031;
+}
+
+.goal-item .goal-type.promise {
+    background: #74b9ff;
+    color: #0984e3;
+}
+
+.goal-item .description {
+    color: #555;
+    margin-bottom: 5px;
+}
+
+.goal-item .meta {
+    font-size: 0.85em;
+    color: #95a5a6;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
     body {
@@ -438,6 +707,20 @@ h3 {
     .secondary-btn {
         width: 100%;
         margin: 5px 0;
+    }
+
+    .modal-content {
+        width: 95%;
+        max-height: 90vh;
+    }
+
+    .modal-body {
+        padding: 20px;
+    }
+
+    .modal-header,
+    .modal-footer {
+        padding: 15px 20px;
     }
 }
 

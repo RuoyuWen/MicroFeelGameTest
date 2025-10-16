@@ -5,15 +5,366 @@ const state = {
     modules: {
         dialogue: { prompt: '', jsonMode: false },
         summary: { prompt: '', jsonMode: false },
-        story: { prompt: '', jsonMode: false }
+        story: { prompt: '', jsonMode: false },
+        memory: { prompt: '', enabled: true }
     },
     scene: {
         storySummary: '',
         npcList: '',
         npcGoals: '',
         chatHistory: []
-    }
+    },
+    playerMemory: null  // 将在初始化时加载
 };
+
+// ============================================
+// 玩家记忆系统
+// ============================================
+
+// 创建空白记忆
+function createEmptyMemory() {
+    return {
+        player_info: {
+            name: '',
+            description: '',
+            personality: '',
+            background: ''
+        },
+        key_facts: [],
+        relationships: {},
+        goals_and_promises: [],
+        important_events: [],
+        inventory_mentions: [],
+        skills_and_abilities: [],
+        secrets_discovered: []
+    };
+}
+
+// 从 localStorage 加载玩家记忆
+function loadPlayerMemory() {
+    try {
+        const saved = localStorage.getItem('ai_rpg_player_memory');
+        if (saved) {
+            console.log('✅ 从 localStorage 加载玩家记忆');
+            return JSON.parse(saved);
+        }
+    } catch (error) {
+        console.error('加载玩家记忆失败:', error);
+    }
+    console.log('📝 创建新的玩家记忆');
+    return createEmptyMemory();
+}
+
+// 保存玩家记忆到 localStorage
+function savePlayerMemory(memory) {
+    try {
+        localStorage.setItem('ai_rpg_player_memory', JSON.stringify(memory));
+        console.log('💾 玩家记忆已保存');
+        return true;
+    } catch (error) {
+        console.error('保存玩家记忆失败:', error);
+        alert('保存记忆失败，可能是因为存储空间不足');
+        return false;
+    }
+}
+
+// 清空玩家记忆
+function clearPlayerMemory() {
+    if (confirm('确定要清空所有玩家记忆吗？此操作不可撤销！')) {
+        localStorage.removeItem('ai_rpg_player_memory');
+        state.playerMemory = createEmptyMemory();
+        console.log('🗑️ 玩家记忆已清空');
+        alert('玩家记忆已清空');
+        return true;
+    }
+    return false;
+}
+
+// 导出玩家记忆为JSON文件
+function exportPlayerMemory() {
+    const dataStr = JSON.stringify(state.playerMemory, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `player_memory_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    console.log('📥 玩家记忆已导出');
+}
+
+// 生成记忆上下文（用于对话模块）
+function generateMemoryContext(memory) {
+    if (!memory || !state.modules.memory.enabled) {
+        return '';
+    }
+
+    let context = '\n【玩家记忆档案】\n';
+
+    // 玩家信息
+    if (memory.player_info.name || memory.player_info.description) {
+        context += '玩家信息：';
+        if (memory.player_info.name) context += `${memory.player_info.name} - `;
+        context += `${memory.player_info.description || '无'}\n`;
+        if (memory.player_info.personality) {
+            context += `性格：${memory.player_info.personality}\n`;
+        }
+    }
+
+    // NPC关系
+    const relationships = Object.entries(memory.relationships);
+    if (relationships.length > 0) {
+        context += '\n与NPC的关系：\n';
+        relationships.slice(0, 5).forEach(([npc, rel]) => {
+            context += `- ${npc}：${rel.relationship || '未知'}（信任度${rel.trust_level || 5}/10）\n`;
+        });
+    }
+
+    // 当前目标和承诺
+    const activeGoals = memory.goals_and_promises.filter(g => g.status === 'active');
+    if (activeGoals.length > 0) {
+        context += '\n当前目标和承诺：\n';
+        activeGoals.slice(0, 3).forEach(g => {
+            context += `- ${g.type === 'goal' ? '目标' : '承诺'}：${g.content}\n`;
+        });
+    }
+
+    // 已发现的线索
+    if (memory.secrets_discovered.length > 0) {
+        context += '\n已发现的线索：\n';
+        context += memory.secrets_discovered.slice(0, 3).join('、') + '\n';
+    }
+
+    return context;
+}
+
+// 更新玩家记忆（调用Memory Module）
+async function updatePlayerMemory(recentDialogue) {
+    if (!state.modules.memory.enabled) {
+        console.log('⚠️ 记忆系统未启用');
+        return;
+    }
+
+    console.log('🧠 开始更新玩家记忆...');
+
+    try {
+        // 构建输入数据
+        const input = {
+            current_scene: state.scene.storySummary.substring(0, 100),
+            recent_conversation: recentDialogue.map(msg => {
+                if (msg.role === 'player') {
+                    return { role: 'player', content: msg.content };
+                } else {
+                    // 尝试解析NPC响应
+                    try {
+                        const parsed = JSON.parse(msg.content);
+                        if (parsed.responses) {
+                            // 多个NPC响应
+                            return parsed.responses.map(r => ({
+                                role: 'npc',
+                                npc_name: r.npc_name,
+                                content: r.content
+                            }));
+                        } else {
+                            // 单个NPC响应
+                            return {
+                                role: 'npc',
+                                npc_name: parsed.npc_name || 'NPC',
+                                content: parsed.content
+                            };
+                        }
+                    } catch {
+                        // 文本格式
+                        return { role: 'npc', content: msg.content };
+                    }
+                }
+            }).flat(),
+            current_memory: state.playerMemory
+        };
+
+        // 构建提示词
+        const userPrompt = `
+请分析以下对话，提取关键信息并更新玩家记忆。
+
+当前场景：${input.current_scene}
+
+对话内容：
+${input.recent_conversation.map(msg => {
+    if (msg.role === 'player') {
+        return `玩家：${msg.content}`;
+    } else {
+        return `${msg.npc_name || 'NPC'}：${msg.content}`;
+    }
+}).join('\n')}
+
+当前记忆状态：
+${JSON.stringify(input.current_memory, null, 2)}
+
+请返回JSON格式的更新指令。格式如下：
+{
+  "player_info": {
+    "name": "玩家名字（如果提到）",
+    "description": "更新的描述（如果提到）",
+    "personality": "更新的性格（如果提到）",
+    "background": "更新的背景（如果提到）"
+  },
+  "new_key_facts": [
+    { "fact": "关键事实", "scene": "${input.current_scene}" }
+  ],
+  "relationship_updates": {
+    "NPC名字": {
+      "relationship": "关系类型",
+      "trust_level": 7,
+      "new_interactions": ["新的互动记录"]
+    }
+  },
+  "new_goals_and_promises": [
+    {
+      "type": "goal 或 promise",
+      "content": "内容",
+      "related_npc": "相关NPC",
+      "status": "active",
+      "scene": "${input.current_scene}"
+    }
+  ],
+  "new_important_events": [
+    { "event": "重要事件", "scene": "${input.current_scene}", "impact": "影响" }
+  ],
+  "new_inventory": ["新物品"],
+  "new_skills": ["新技能"],
+  "new_secrets": ["新发现的秘密"]
+}
+
+注意：
+1. 只返回需要更新的字段，没有更新的字段可以省略或设为null
+2. 不要杜撰信息，只记录明确提到的内容
+3. 保持客观，不添加主观解释
+`;
+
+        // 调用AI
+        const response = await callOpenAI(
+            state.modules.memory.prompt,
+            userPrompt,
+            true  // 使用JSON模式
+        );
+
+        console.log('🤖 Memory Module响应:', response);
+
+        // 解析更新指令
+        const updates = JSON.parse(response);
+
+        // 应用更新
+        applyMemoryUpdates(state.playerMemory, updates);
+
+        // 保存到localStorage
+        savePlayerMemory(state.playerMemory);
+
+        console.log('✅ 玩家记忆更新完成');
+
+    } catch (error) {
+        console.error('❌ 更新玩家记忆失败:', error);
+        // 不影响对话继续，只是记录错误
+    }
+}
+
+// 应用记忆更新
+function applyMemoryUpdates(memory, updates) {
+    // 更新玩家信息
+    if (updates.player_info) {
+        for (const [key, value] of Object.entries(updates.player_info)) {
+            if (value && value !== 'null' && value !== '无') {
+                memory.player_info[key] = value;
+            }
+        }
+    }
+
+    // 添加新的关键事实
+    if (updates.new_key_facts && Array.isArray(updates.new_key_facts)) {
+        updates.new_key_facts.forEach(fact => {
+            if (fact.fact) {
+                fact.timestamp = new Date().toISOString();
+                memory.key_facts.push(fact);
+            }
+        });
+    }
+
+    // 更新NPC关系
+    if (updates.relationship_updates) {
+        for (const [npcName, relUpdate] of Object.entries(updates.relationship_updates)) {
+            if (!memory.relationships[npcName]) {
+                memory.relationships[npcName] = {
+                    relationship: relUpdate.relationship || '中立',
+                    trust_level: relUpdate.trust_level || 5,
+                    key_interactions: []
+                };
+            } else {
+                if (relUpdate.relationship) {
+                    memory.relationships[npcName].relationship = relUpdate.relationship;
+                }
+                if (relUpdate.trust_level !== undefined) {
+                    memory.relationships[npcName].trust_level = relUpdate.trust_level;
+                }
+            }
+            
+            // 添加新的互动记录
+            if (relUpdate.new_interactions && Array.isArray(relUpdate.new_interactions)) {
+                memory.relationships[npcName].key_interactions.push(...relUpdate.new_interactions);
+                // 限制互动记录数量
+                if (memory.relationships[npcName].key_interactions.length > 10) {
+                    memory.relationships[npcName].key_interactions = 
+                        memory.relationships[npcName].key_interactions.slice(-10);
+                }
+            }
+        }
+    }
+
+    // 添加新的目标和承诺
+    if (updates.new_goals_and_promises && Array.isArray(updates.new_goals_and_promises)) {
+        updates.new_goals_and_promises.forEach(goal => {
+            if (goal.content) {
+                memory.goals_and_promises.push(goal);
+            }
+        });
+    }
+
+    // 添加重要事件
+    if (updates.new_important_events && Array.isArray(updates.new_important_events)) {
+        updates.new_important_events.forEach(event => {
+            if (event.event) {
+                memory.important_events.push(event);
+            }
+        });
+    }
+
+    // 添加物品
+    if (updates.new_inventory && Array.isArray(updates.new_inventory)) {
+        updates.new_inventory.forEach(item => {
+            if (item && !memory.inventory_mentions.includes(item)) {
+                memory.inventory_mentions.push(item);
+            }
+        });
+    }
+
+    // 添加技能
+    if (updates.new_skills && Array.isArray(updates.new_skills)) {
+        updates.new_skills.forEach(skill => {
+            if (skill && !memory.skills_and_abilities.includes(skill)) {
+                memory.skills_and_abilities.push(skill);
+            }
+        });
+    }
+
+    // 添加秘密
+    if (updates.new_secrets && Array.isArray(updates.new_secrets)) {
+        updates.new_secrets.forEach(secret => {
+            if (secret && !memory.secrets_discovered.includes(secret)) {
+                memory.secrets_discovered.push(secret);
+            }
+        });
+    }
+
+    console.log('📝 记忆更新已应用:', updates);
+}
 
 // 页面元素
 const pages = {
@@ -104,7 +455,45 @@ async function callOpenAI(systemPrompt, userPromptOrMessages, useJsonMode = fals
     }
 }
 
+// ============================================
+// JSON Mode自动提示功能
+// ============================================
+
+const JSON_MODE_HINT = '\n\n重要：请使用JSON格式返回结果。';
+
+// 为每个模块的JSON复选框添加自动提示功能
+function setupJsonModeAutoHint(promptId, checkboxId) {
+    const promptTextarea = document.getElementById(promptId);
+    const checkbox = document.getElementById(checkboxId);
+    
+    checkbox.addEventListener('change', () => {
+        let currentPrompt = promptTextarea.value;
+        
+        if (checkbox.checked) {
+            // 勾选时，添加JSON提示（如果还没有）
+            if (!currentPrompt.includes('请使用JSON格式返回')) {
+                promptTextarea.value = currentPrompt + JSON_MODE_HINT;
+                console.log(`✅ 已添加 JSON Mode 提示到 ${promptId}`);
+            }
+        } else {
+            // 取消勾选时，删除JSON提示
+            if (currentPrompt.includes(JSON_MODE_HINT)) {
+                promptTextarea.value = currentPrompt.replace(JSON_MODE_HINT, '');
+                console.log(`❌ 已删除 JSON Mode 提示从 ${promptId}`);
+            }
+        }
+    });
+}
+
+// 初始化各模块的JSON Mode自动提示
+setupJsonModeAutoHint('module1-prompt', 'module1-json');
+setupJsonModeAutoHint('module2-prompt', 'module2-json');
+setupJsonModeAutoHint('module3-prompt', 'module3-json');
+
+// ============================================
 // 配置页面逻辑
+// ============================================
+
 document.getElementById('start-btn').addEventListener('click', () => {
     // 获取 API Key 和模型
     const apiKey = document.getElementById('api-key').value.trim();
@@ -129,9 +518,17 @@ document.getElementById('start-btn').addEventListener('click', () => {
     state.modules.story.prompt = document.getElementById('module3-prompt').value.trim();
     state.modules.story.jsonMode = document.getElementById('module3-json').checked;
 
+    state.modules.memory.prompt = document.getElementById('module4-prompt').value.trim();
+    state.modules.memory.enabled = document.getElementById('module4-enabled').checked;
+
     // 检查必填项
     if (!state.modules.dialogue.prompt || !state.modules.summary.prompt || !state.modules.story.prompt) {
         alert('请为所有模块配置 System Prompt');
+        return;
+    }
+
+    if (state.modules.memory.enabled && !state.modules.memory.prompt) {
+        alert('请为记忆模块配置 System Prompt，或取消启用');
         return;
     }
 
@@ -140,6 +537,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
     console.log('对话模块 System Prompt:', state.modules.dialogue.prompt.substring(0, 50) + '...');
     console.log('总结模块 System Prompt:', state.modules.summary.prompt.substring(0, 50) + '...');
     console.log('故事模块 System Prompt:', state.modules.story.prompt.substring(0, 50) + '...');
+    console.log('记忆模块:', state.modules.memory.enabled ? '已启用' : '已禁用');
 
     // 跳转到场景初始化页面
     showPage('sceneInit');
@@ -293,16 +691,20 @@ document.getElementById('send-btn').addEventListener('click', async () => {
         // 构建包含历史记录的消息数组
         const messages = [];
         
-        // 第一条消息：场景信息和指令
+        // 第一条消息：场景信息、记忆上下文和指令
+        const memoryContext = generateMemoryContext(state.playerMemory);
+        
         const contextMessage = `
 故事背景：${state.scene.storySummary}
 
 NPC列表：${state.scene.npcList}
 
 NPC目标：${state.scene.npcGoals}
+${memoryContext}
 
 请根据上述信息和对话历史，决定让几个NPC回应（1个、2个或更多都可以，要符合实际情况）。
 记住之前的对话内容，保持对话的连贯性和一致性。
+NPC应该记得玩家的名字、背景，以及之前的互动和承诺。
 
 返回格式：
 ${state.modules.dialogue.jsonMode ? 
@@ -351,6 +753,12 @@ ${state.modules.dialogue.jsonMode ?
         // 添加到聊天历史（先添加玩家输入，再添加NPC响应）
         state.scene.chatHistory.push({ role: 'player', content: userInput });
         state.scene.chatHistory.push({ role: 'npc', content: response });
+
+        // 更新玩家记忆（异步，不阻塞UI）
+        updatePlayerMemory([
+            { role: 'player', content: userInput },
+            { role: 'npc', content: response }
+        ]).catch(err => console.error('记忆更新失败:', err));
 
     } catch (error) {
         console.error('对话模块错误:', error);
@@ -615,6 +1023,202 @@ document.getElementById('user-input').addEventListener('keydown', (e) => {
     }
 });
 
+// ============================================
+// 记忆查看界面
+// ============================================
+
+// 显示记忆模态框
+function showMemoryModal() {
+    const modal = document.getElementById('memory-modal');
+    const display = document.getElementById('memory-display');
+    
+    // 生成记忆HTML
+    display.innerHTML = generateMemoryHTML(state.playerMemory);
+    
+    // 显示模态框
+    modal.classList.add('active');
+}
+
+// 关闭记忆模态框
+function closeMemoryModal() {
+    const modal = document.getElementById('memory-modal');
+    modal.classList.remove('active');
+}
+
+// 生成记忆HTML
+function generateMemoryHTML(memory) {
+    if (!memory) return '<p class="empty">暂无记忆数据</p>';
+    
+    let html = '';
+    
+    // 玩家信息
+    html += '<div class="memory-section">';
+    html += '<h3>📋 玩家信息</h3>';
+    if (memory.player_info.name || memory.player_info.description || 
+        memory.player_info.personality || memory.player_info.background) {
+        if (memory.player_info.name) {
+            html += `<div class="memory-item"><div class="label">名字：</div><div class="value">${escapeHtml(memory.player_info.name)}</div></div>`;
+        }
+        if (memory.player_info.description) {
+            html += `<div class="memory-item"><div class="label">描述：</div><div class="value">${escapeHtml(memory.player_info.description)}</div></div>`;
+        }
+        if (memory.player_info.personality) {
+            html += `<div class="memory-item"><div class="label">性格：</div><div class="value">${escapeHtml(memory.player_info.personality)}</div></div>`;
+        }
+        if (memory.player_info.background) {
+            html += `<div class="memory-item"><div class="label">背景：</div><div class="value">${escapeHtml(memory.player_info.background)}</div></div>`;
+        }
+    } else {
+        html += '<p class="empty">暂无玩家信息</p>';
+    }
+    html += '</div>';
+    
+    // NPC关系
+    html += '<div class="memory-section">';
+    html += '<h3>🤝 NPC关系</h3>';
+    const relationships = Object.entries(memory.relationships);
+    if (relationships.length > 0) {
+        relationships.forEach(([npcName, rel]) => {
+            const relType = (rel.relationship || '').toLowerCase();
+            let cssClass = 'neutral';
+            if (relType.includes('友好') || relType.includes('友善')) cssClass = 'friendly';
+            else if (relType.includes('敌对') || relType.includes('敌意')) cssClass = 'hostile';
+            else if (relType.includes('盟友') || relType.includes('同伴')) cssClass = 'ally';
+            
+            html += '<div class="relationship-item">';
+            html += `<div class="npc-name">${escapeHtml(npcName)}</div>`;
+            html += `<span class="relationship-type ${cssClass}">${escapeHtml(rel.relationship || '中立')}</span>`;
+            html += `<span class="trust-level">信任度: ${rel.trust_level || 5}/10</span>`;
+            if (rel.key_interactions && rel.key_interactions.length > 0) {
+                html += '<ul class="interactions">';
+                rel.key_interactions.slice(-5).forEach(interaction => {
+                    html += `<li>${escapeHtml(interaction)}</li>`;
+                });
+                html += '</ul>';
+            }
+            html += '</div>';
+        });
+    } else {
+        html += '<p class="empty">暂无NPC关系记录</p>';
+    }
+    html += '</div>';
+    
+    // 目标和承诺
+    html += '<div class="memory-section">';
+    html += '<h3>🎯 目标与承诺</h3>';
+    if (memory.goals_and_promises.length > 0) {
+        memory.goals_and_promises.forEach(goal => {
+            const statusIcon = goal.status === 'completed' ? '✅' : 
+                             goal.status === 'failed' ? '❌' : '◆';
+            html += `<div class="goal-item ${goal.status}">`;
+            html += `<div class="status-icon">${statusIcon}</div>`;
+            html += '<div class="goal-content">';
+            html += `<div class="goal-type ${goal.type}">${goal.type === 'goal' ? '目标' : '承诺'}</div>`;
+            html += `<div class="description">${escapeHtml(goal.content)}</div>`;
+            html += `<div class="meta">`;
+            if (goal.related_npc) html += `相关NPC: ${escapeHtml(goal.related_npc)} · `;
+            html += `${goal.scene || '未知场景'}`;
+            html += `</div>`;
+            html += '</div>';
+            html += '</div>';
+        });
+    } else {
+        html += '<p class="empty">暂无目标或承诺</p>';
+    }
+    html += '</div>';
+    
+    // 关键事实
+    if (memory.key_facts.length > 0) {
+        html += '<div class="memory-section">';
+        html += '<h3>💡 关键事实</h3>';
+        memory.key_facts.slice(-10).forEach(fact => {
+            html += '<div class="memory-item">';
+            html += `<div class="value">${escapeHtml(fact.fact)}</div>`;
+            html += `<div class="meta">${fact.scene || '未知场景'}</div>`;
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+    
+    // 重要事件
+    if (memory.important_events.length > 0) {
+        html += '<div class="memory-section">';
+        html += '<h3>⭐ 重要事件</h3>';
+        memory.important_events.slice(-10).forEach(event => {
+            html += '<div class="memory-item">';
+            html += `<div class="value">${escapeHtml(event.event)}</div>`;
+            html += `<div class="meta">${event.scene || '未知场景'}`;
+            if (event.impact) html += ` · 影响: ${escapeHtml(event.impact)}`;
+            html += `</div>`;
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+    
+    // 物品
+    if (memory.inventory_mentions.length > 0) {
+        html += '<div class="memory-section">';
+        html += '<h3>🎒 物品</h3>';
+        html += '<div class="memory-item">';
+        html += `<div class="value">${memory.inventory_mentions.map(escapeHtml).join('、')}</div>`;
+        html += '</div>';
+        html += '</div>';
+    }
+    
+    // 技能
+    if (memory.skills_and_abilities.length > 0) {
+        html += '<div class="memory-section">';
+        html += '<h3>⚔️ 技能与能力</h3>';
+        html += '<div class="memory-item">';
+        html += `<div class="value">${memory.skills_and_abilities.map(escapeHtml).join('、')}</div>`;
+        html += '</div>';
+        html += '</div>';
+    }
+    
+    // 已发现的秘密
+    if (memory.secrets_discovered.length > 0) {
+        html += '<div class="memory-section">';
+        html += '<h3>🔍 已发现的秘密</h3>';
+        memory.secrets_discovered.forEach(secret => {
+            html += '<div class="memory-item">';
+            html += `<div class="value">${escapeHtml(secret)}</div>`;
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+    
+    return html;
+}
+
+// 绑定记忆相关按钮事件
+document.getElementById('view-memory-btn').addEventListener('click', showMemoryModal);
+document.getElementById('close-memory-modal').addEventListener('click', closeMemoryModal);
+document.getElementById('close-memory-btn').addEventListener('click', closeMemoryModal);
+
+document.getElementById('export-memory-btn').addEventListener('click', () => {
+    exportPlayerMemory();
+});
+
+document.getElementById('clear-memory-btn').addEventListener('click', () => {
+    if (clearPlayerMemory()) {
+        closeMemoryModal();
+    }
+});
+
+// 点击模态框外部关闭
+document.getElementById('memory-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'memory-modal') {
+        closeMemoryModal();
+    }
+});
+
+// ============================================
 // 初始化
+// ============================================
+
+// 初始化玩家记忆
+state.playerMemory = loadPlayerMemory();
+
 console.log('AI RPG 测试系统已加载');
+console.log('🧠 玩家记忆系统已启用');
 
