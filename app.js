@@ -466,29 +466,45 @@ function setupJsonModeAutoHint(promptId, checkboxId) {
     const promptTextarea = document.getElementById(promptId);
     const checkbox = document.getElementById(checkboxId);
     
+    // 检查元素是否存在
+    if (!promptTextarea) {
+        console.error(`❌ 未找到元素: ${promptId}`);
+        return;
+    }
+    if (!checkbox) {
+        console.error(`❌ 未找到元素: ${checkboxId}`);
+        return;
+    }
+    
+    console.log(`✅ 已绑定 JSON Mode 自动提示: ${promptId} ↔ ${checkboxId}`);
+    
     checkbox.addEventListener('change', () => {
         let currentPrompt = promptTextarea.value;
+        
+        console.log(`📝 ${checkboxId} 状态变更: ${checkbox.checked ? '勾选' : '取消勾选'}`);
+        console.log(`📄 当前 Prompt 长度: ${currentPrompt.length} 字符`);
         
         if (checkbox.checked) {
             // 勾选时，添加JSON提示（如果还没有）
             if (!currentPrompt.includes('请使用JSON格式返回')) {
                 promptTextarea.value = currentPrompt + JSON_MODE_HINT;
                 console.log(`✅ 已添加 JSON Mode 提示到 ${promptId}`);
+                console.log(`📄 更新后 Prompt 长度: ${promptTextarea.value.length} 字符`);
+            } else {
+                console.log(`ℹ️ Prompt 中已包含 JSON 格式说明，跳过添加`);
             }
         } else {
             // 取消勾选时，删除JSON提示
             if (currentPrompt.includes(JSON_MODE_HINT)) {
                 promptTextarea.value = currentPrompt.replace(JSON_MODE_HINT, '');
                 console.log(`❌ 已删除 JSON Mode 提示从 ${promptId}`);
+                console.log(`📄 更新后 Prompt 长度: ${promptTextarea.value.length} 字符`);
+            } else {
+                console.log(`ℹ️ Prompt 中未找到自动添加的提示，无需删除`);
             }
         }
     });
 }
-
-// 初始化各模块的JSON Mode自动提示
-setupJsonModeAutoHint('module1-prompt', 'module1-json');
-setupJsonModeAutoHint('module2-prompt', 'module2-json');
-setupJsonModeAutoHint('module3-prompt', 'module3-json');
 
 // ============================================
 // 配置页面逻辑
@@ -1218,6 +1234,13 @@ document.getElementById('memory-modal').addEventListener('click', (e) => {
 
 // 初始化玩家记忆
 state.playerMemory = loadPlayerMemory();
+
+// 初始化各模块的JSON Mode自动提示
+console.log('🔧 正在初始化 JSON Mode 自动提示...');
+setupJsonModeAutoHint('module1-prompt', 'module1-json');
+setupJsonModeAutoHint('module2-prompt', 'module2-json');
+setupJsonModeAutoHint('module3-prompt', 'module3-json');
+console.log('✅ JSON Mode 自动提示已启用');
 
 console.log('AI RPG 测试系统已加载');
 console.log('🧠 玩家记忆系统已启用');
