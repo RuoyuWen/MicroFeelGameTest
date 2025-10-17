@@ -1,0 +1,568 @@
+================================================
+⚡ AI RPG系统 - Unreal移植快速参考
+================================================
+
+本文档提供快速查找和参考信息。
+
+================================================
+📚 文档导航
+================================================
+
+1. Unreal引擎移植技术文档.md
+   → 完整的系统架构、数据结构、模块设计
+   → 每个模块的输入输出定义
+   → 完整的数据流程图
+
+2. Unreal实现细节补充文档.md
+   → 完整的C++代码实现
+   → 工具函数库
+   → 最佳实践和调试技巧
+
+3. 本文件（快速参考）
+   → 核心要点速查
+   → 常见问题快速解答
+
+================================================
+🎯 核心模块一览
+================================================
+
+【4个AI模块】
+┌────────────────────────────────────────────┐
+│ Module 1: 对话模块 (DialogueModule)       │
+│ 输入：玩家输入 + 场景 + 历史 + 记忆       │
+│ 输出：NPC回应（1个或多个）                │
+│ API：带历史记录调用                       │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│ Module 2: 总结模块 (SummaryModule)        │
+│ 输入：场景信息 + 对话历史                 │
+│ 输出：场景总结文本                        │
+│ API：简单调用                             │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│ Module 3: 故事模块 (StoryModule)          │
+│ 输入：场景总结 + NPC信息                  │
+│ 输出：下一幕描述 + NPC初始对话            │
+│ API：简单调用                             │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│ Module 4: 记忆模块 (MemoryModule)         │
+│ 输入：对话内容 + 当前记忆                 │
+│ 输出：更新后的记忆                        │
+│ API：JSON模式调用（必须）                 │
+└────────────────────────────────────────────┘
+
+【支持系统】
+- OpenAIClient: HTTP通信层
+- ConfigurationSystem: 配置管理
+- SaveGame: 持久化存储
+- UISystem: 用户界面
+
+================================================
+📊 数据流程速览
+================================================
+
+【配置阶段】
+用户输入 → 验证 → GameState → SaveGame
+
+【场景初始化】
+场景信息 → 生成问候 → API调用 → 显示
+
+【对话循环】
+玩家输入 → 
+  构建上下文（场景 + 历史 + 记忆摘要） → 
+  对话模块API调用 → 
+  NPC回应 → 
+  显示 → 
+  异步更新记忆（记忆模块API调用） → 
+  保存
+
+【场景结束】
+总结模块API → 显示总结 → 
+故事模块API → 显示下一幕 → 
+保存 → 切换场景
+
+================================================
+🔧 关键数据结构
+================================================
+
+【FGameStateData】- 全局游戏状态
+├── APIKey: FString
+├── ModelName: FString
+├── Modules: FAIModules
+│   ├── DialogueModule: FAIModule
+│   ├── SummaryModule: FAIModule
+│   ├── StoryModule: FAIModule
+│   ├── MemoryModule: FAIModule
+│   └── bMemoryEnabled: bool
+├── Scene: FSceneInfo
+│   ├── StorySummary: FString
+│   ├── NPCList: FString
+│   ├── NPCGoals: FString
+│   ├── ChatHistory: TArray<FChatMessage>
+│   └── NextNPCDialogue: FNPCDialogue
+└── PlayerMemory: FPlayerMemory
+    ├── PlayerInfo: FPlayerInfo
+    ├── KeyFacts: TArray<FKeyFact>
+    ├── Relationships: TMap<FString, FNPCRelationship>
+    ├── GoalsAndPromises: TArray<FGoalOrPromise>
+    ├── ImportantEvents: TArray<FImportantEvent>
+    ├── InventoryMentions: TArray<FString>
+    ├── SkillsAndAbilities: TArray<FString>
+    └── SecretsDiscovered: TArray<FString>
+
+【FOpenAIRequest】- API请求
+├── SystemPrompt: FString
+├── Messages: TArray<FChatMessage>
+├── bUseJsonMode: bool
+├── APIKey: FString
+└── ModelName: FString
+
+【FOpenAIResponse】- API响应
+├── bSuccess: bool
+├── Content: FString
+└── ErrorMessage: FString
+
+================================================
+⚙️ 必需的Unreal模块
+================================================
+
+在 .Build.cs 中添加：
+- "HTTP"           // HTTP请求
+- "Json"           // JSON处理
+- "JsonUtilities"  // JSON工具
+- "UMG"            // UI系统
+- "Slate"          // Slate UI
+- "SlateCore"      // Slate核心
+
+================================================
+🔌 OpenAI API调用格式
+================================================
+
+【端点】
+https://api.openai.com/v1/chat/completions
+
+【Headers】
+Content-Type: application/json
+Authorization: Bearer {APIKey}
+
+【请求体】
+{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {"role": "system", "content": "System Prompt"},
+    {"role": "user", "content": "User message"},
+    {"role": "assistant", "content": "AI response"},
+    {"role": "user", "content": "Next user message"}
+  ],
+  "temperature": 0.7,
+  "response_format": {"type": "json_object"}  // JSON模式
+}
+
+【响应体】
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "AI生成的内容"
+      }
+    }
+  ]
+}
+
+================================================
+💾 保存系统快速实现
+================================================
+
+// 创建SaveGame类
+UCLASS()
+class UAIRPGSaveGame : public USaveGame
+{
+    GENERATED_BODY()
+public:
+    UPROPERTY()
+    FGameStateData GameState;
+    
+    static const FString SaveSlotName;
+};
+
+// 保存
+void SaveGame(const FGameStateData& State)
+{
+    auto SaveObj = Cast<UAIRPGSaveGame>(
+        UGameplayStatics::CreateSaveGameObject(
+            UAIRPGSaveGame::StaticClass()
+        )
+    );
+    SaveObj->GameState = State;
+    UGameplayStatics::SaveGameToSlot(
+        SaveObj, 
+        UAIRPGSaveGame::SaveSlotName, 
+        0
+    );
+}
+
+// 加载
+FGameStateData LoadGame()
+{
+    if (UGameplayStatics::DoesSaveGameExist(
+        UAIRPGSaveGame::SaveSlotName, 0))
+    {
+        auto LoadObj = Cast<UAIRPGSaveGame>(
+            UGameplayStatics::LoadGameFromSlot(
+                UAIRPGSaveGame::SaveSlotName, 
+                0
+            )
+        );
+        return LoadObj->GameState;
+    }
+    return FGameStateData(); // 默认值
+}
+
+================================================
+🎯 JSON解析快速代码
+================================================
+
+【解析NPC响应（JSON格式）】
+FNPCResponse ParseJSON(const FString& JSON)
+{
+    FNPCResponse Result;
+    TSharedPtr<FJsonObject> JsonObj;
+    auto Reader = TJsonReaderFactory<>::Create(JSON);
+    
+    if (FJsonSerializer::Deserialize(Reader, JsonObj))
+    {
+        const TArray<TSharedPtr<FJsonValue>>* Array;
+        if (JsonObj->TryGetArrayField(TEXT("responses"), Array))
+        {
+            for (auto& Val : *Array)
+            {
+                auto Obj = Val->AsObject();
+                FNPCDialogue D;
+                D.NPCName = Obj->GetStringField(TEXT("npc_name"));
+                D.Content = Obj->GetStringField(TEXT("content"));
+                D.Emotion = Obj->GetStringField(TEXT("emotion"));
+                Result.Responses.Add(D);
+            }
+        }
+    }
+    return Result;
+}
+
+【构造JSON请求】
+FString BuildJSONRequest(const FOpenAIRequest& Req)
+{
+    auto Root = MakeShareable(new FJsonObject);
+    Root->SetStringField(TEXT("model"), Req.ModelName);
+    Root->SetNumberField(TEXT("temperature"), 0.7);
+    
+    TArray<TSharedPtr<FJsonValue>> MsgArray;
+    
+    // System message
+    auto SysMsg = MakeShareable(new FJsonObject);
+    SysMsg->SetStringField(TEXT("role"), TEXT("system"));
+    SysMsg->SetStringField(TEXT("content"), Req.SystemPrompt);
+    MsgArray.Add(MakeShareable(new FJsonValueObject(SysMsg)));
+    
+    // User messages
+    for (auto& M : Req.Messages)
+    {
+        auto MsgObj = MakeShareable(new FJsonObject);
+        MsgObj->SetStringField(TEXT("role"), M.Role);
+        MsgObj->SetStringField(TEXT("content"), M.Content);
+        MsgArray.Add(MakeShareable(new FJsonValueObject(MsgObj)));
+    }
+    
+    Root->SetArrayField(TEXT("messages"), MsgArray);
+    
+    if (Req.bUseJsonMode)
+    {
+        auto Format = MakeShareable(new FJsonObject);
+        Format->SetStringField(TEXT("type"), TEXT("json_object"));
+        Root->SetObjectField(TEXT("response_format"), Format);
+    }
+    
+    FString Output;
+    auto Writer = TJsonWriterFactory<>::Create(&Output);
+    FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
+    return Output;
+}
+
+================================================
+🚦 异步HTTP调用模板
+================================================
+
+void CallOpenAI(const FOpenAIRequest& Req, 
+                TFunction<void(FOpenAIResponse)> Callback)
+{
+    auto HttpReq = FHttpModule::Get().CreateRequest();
+    
+    HttpReq->SetURL(TEXT("https://api.openai.com/v1/chat/completions"));
+    HttpReq->SetVerb(TEXT("POST"));
+    HttpReq->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    HttpReq->SetHeader(TEXT("Authorization"), 
+        FString::Printf(TEXT("Bearer %s"), *Req.APIKey));
+    HttpReq->SetContentAsString(BuildJSONRequest(Req));
+    
+    HttpReq->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr Request, 
+                   FHttpResponsePtr Response, 
+                   bool bSuccess)
+        {
+            FOpenAIResponse Result;
+            
+            if (bSuccess && Response.IsValid())
+            {
+                TSharedPtr<FJsonObject> JsonObj;
+                auto Reader = TJsonReaderFactory<>::Create(
+                    Response->GetContentAsString()
+                );
+                
+                if (FJsonSerializer::Deserialize(Reader, JsonObj))
+                {
+                    const TArray<TSharedPtr<FJsonValue>>* Choices;
+                    if (JsonObj->TryGetArrayField(TEXT("choices"), Choices))
+                    {
+                        auto Choice = (*Choices)[0]->AsObject();
+                        auto Msg = Choice->GetObjectField(TEXT("message"));
+                        Result.bSuccess = true;
+                        Result.Content = Msg->GetStringField(TEXT("content"));
+                    }
+                }
+            }
+            else
+            {
+                Result.bSuccess = false;
+                Result.ErrorMessage = TEXT("HTTP请求失败");
+            }
+            
+            // 切换到游戏线程
+            AsyncTask(ENamedThreads::GameThread, [Result, Callback]()
+            {
+                Callback(Result);
+            });
+        }
+    );
+    
+    HttpReq->ProcessRequest();
+}
+
+================================================
+🎨 UI实现要点
+================================================
+
+【Widget结构】
+RootWidget
+├── ConfigWidget        // 配置页面
+├── SceneInitWidget     // 场景初始化
+├── DialogueWidget      // 对话页面
+├── SummaryWidget       // 总结页面
+└── MemoryModalWidget   // 记忆查看
+
+【页面切换】
+void SwitchToPage(EPageType NewPage)
+{
+    // 隐藏所有页面
+    ConfigWidget->SetVisibility(ESlateVisibility::Collapsed);
+    SceneInitWidget->SetVisibility(ESlateVisibility::Collapsed);
+    DialogueWidget->SetVisibility(ESlateVisibility::Collapsed);
+    SummaryWidget->SetVisibility(ESlateVisibility::Collapsed);
+    
+    // 显示目标页面
+    switch (NewPage)
+    {
+        case EPageType::Config:
+            ConfigWidget->SetVisibility(ESlateVisibility::Visible);
+            break;
+        // ...
+    }
+}
+
+【加载动画】
+void ShowLoading(bool bShow)
+{
+    if (bShow)
+    {
+        LoadingWidget->SetVisibility(ESlateVisibility::Visible);
+        PlayAnimation(SpinnerAnim, 0, 0, 
+            EUMGSequencePlayMode::Forward, 1.0f, true);
+    }
+    else
+    {
+        LoadingWidget->SetVisibility(ESlateVisibility::Collapsed);
+        StopAnimation(SpinnerAnim);
+    }
+}
+
+================================================
+⚠️ 常见陷阱和注意事项
+================================================
+
+1. HTTP回调在非游戏线程
+   → 使用AsyncTask切换到游戏线程
+
+2. JSON解析可能失败
+   → 总是检查返回值，添加try-catch
+
+3. 对话历史无限增长
+   → 限制最多40条（20轮）
+
+4. 记忆数据过大
+   → 定期清理旧数据
+
+5. API Key泄露
+   → 不要硬编码，考虑加密存储
+
+6. 网络超时
+   → 设置合理的超时时间（如30秒）
+
+7. UI卡顿
+   → 所有AI调用必须异步
+
+8. 内存泄漏
+   → 所有UObject*使用UPROPERTY()标记
+
+================================================
+🔍 调试技巧
+================================================
+
+【日志输出】
+UE_LOG(LogTemp, Log, TEXT("Message: %s"), *Text);
+UE_LOG(LogTemp, Warning, TEXT("Warning: %s"), *Text);
+UE_LOG(LogTemp, Error, TEXT("Error: %s"), *Text);
+
+【控制台命令】
+在类中添加：
+UFUNCTION(Exec)
+void DebugCommand();
+
+游戏中按 ~ 输入命令
+
+【断点调试】
+在Visual Studio中设置断点
+F5启动调试
+
+【网络抓包】
+使用Fiddler或Charles
+查看HTTP请求详情
+
+================================================
+📊 性能优化清单
+================================================
+
+✓ 限制对话历史长度（≤40条）
+✓ 记忆数据定期清理
+✓ 所有API调用异步
+✓ JSON解析在工作线程
+✓ UI更新使用缓存
+✓ 避免频繁的SaveGame操作
+✓ 大文本使用FText而非FString
+
+================================================
+✅ 实现检查清单
+================================================
+
+配置系统
+[ ] FAIModule结构定义
+[ ] JSON Mode自动提示
+[ ] 配置验证
+[ ] SaveGame实现
+
+HTTP通信
+[ ] UOpenAIClient实现
+[ ] 请求构造
+[ ] 响应解析
+[ ] 错误处理
+
+AI模块
+[ ] UDialogueModule
+[ ] USummaryModule
+[ ] UStoryModule
+[ ] UMemoryModule
+
+数据管理
+[ ] FGameStateData完整定义
+[ ] FPlayerMemory完整定义
+[ ] 持久化保存/加载
+
+UI系统
+[ ] 所有Widget创建
+[ ] 页面切换逻辑
+[ ] 加载动画
+[ ] 错误提示
+
+测试
+[ ] 单元测试
+[ ] 集成测试
+[ ] 性能测试
+
+================================================
+📞 常见问题快速解答
+================================================
+
+Q: 如何测试API连接？
+A: 创建简单的测试函数，发送"hello"给API，
+   检查是否能收到响应。
+
+Q: JSON解析总是失败？
+A: 1. 检查AI是否返回有效JSON
+   2. 打印原始响应查看格式
+   3. 确认已设置response_format
+
+Q: 记忆系统不工作？
+A: 1. 确认bMemoryEnabled为true
+   2. 检查MemoryModule的SystemPrompt
+   3. 确认使用JSON模式
+
+Q: UI卡顿？
+A: 1. 确保所有API调用异步
+   2. 显示加载动画
+   3. 检查是否在游戏线程更新UI
+
+Q: 保存的数据丢失？
+A: 1. 检查SaveGame是否成功
+   2. 查看日志确认保存路径
+   3. 确认UPROPERTY标记正确
+
+================================================
+🎓 学习资源
+================================================
+
+Unreal官方文档
+- HTTP: docs.unrealengine.com/API/Runtime/HTTP/
+- JSON: docs.unrealengine.com/API/Runtime/Json/
+- UMG: docs.unrealengine.com/InteractiveExperiences/UMG/
+
+OpenAI文档
+- API: platform.openai.com/docs/api-reference
+
+社区资源
+- Unreal Slackers Discord
+- Unreal Engine Forums
+- Stack Overflow
+
+================================================
+🎉 开始实现！
+================================================
+
+1. 阅读完整技术文档
+2. 设置项目依赖
+3. 创建数据结构
+4. 实现OpenAIClient
+5. 逐个实现AI模块
+6. 构建UI系统
+7. 测试和优化
+
+详细信息请查看：
+- Unreal引擎移植技术文档.md
+- Unreal实现细节补充文档.md
+
+祝开发顺利！🚀✨
+
+================================================
+
+

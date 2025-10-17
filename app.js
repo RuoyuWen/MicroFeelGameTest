@@ -6,7 +6,8 @@ const state = {
         dialogue: { prompt: '', jsonMode: false },
         summary: { prompt: '', jsonMode: false },
         story: { prompt: '', jsonMode: false },
-        memory: { prompt: '', enabled: true }
+        memory: { prompt: '', enabled: true },
+        letter: { prompt: '', jsonMode: false, enabled: true }
     },
     scene: {
         storySummary: '',
@@ -537,6 +538,10 @@ document.getElementById('start-btn').addEventListener('click', () => {
     state.modules.memory.prompt = document.getElementById('module4-prompt').value.trim();
     state.modules.memory.enabled = document.getElementById('module4-enabled').checked;
 
+    state.modules.letter.prompt = document.getElementById('module5-prompt').value.trim();
+    state.modules.letter.enabled = document.getElementById('module5-enabled').checked;
+    state.modules.letter.jsonMode = document.getElementById('module5-json').checked;
+
     // 检查必填项
     if (!state.modules.dialogue.prompt || !state.modules.summary.prompt || !state.modules.story.prompt) {
         alert('请为所有模块配置 System Prompt');
@@ -548,12 +553,18 @@ document.getElementById('start-btn').addEventListener('click', () => {
         return;
     }
 
+    if (state.modules.letter.enabled && !state.modules.letter.prompt) {
+        alert('请为信件模块配置 System Prompt，或取消启用');
+        return;
+    }
+
     // 调试：显示配置已保存（可选）
     console.log('配置已保存：');
     console.log('对话模块 System Prompt:', state.modules.dialogue.prompt.substring(0, 50) + '...');
     console.log('总结模块 System Prompt:', state.modules.summary.prompt.substring(0, 50) + '...');
     console.log('故事模块 System Prompt:', state.modules.story.prompt.substring(0, 50) + '...');
     console.log('记忆模块:', state.modules.memory.enabled ? '已启用' : '已禁用');
+    console.log('信件模块:', state.modules.letter.enabled ? '已启用' : '已禁用');
 
     // 跳转到场景初始化页面
     showPage('sceneInit');
@@ -856,6 +867,8 @@ document.getElementById('end-dialogue-btn').addEventListener('click', async () =
     // 重置总结页面
     document.getElementById('scene-summary').innerHTML = '<p>正在生成总结...</p>';
     document.getElementById('scene-summary').classList.add('loading');
+    document.getElementById('npc-letter').innerHTML = '<p style="color: #7f8c8d; font-style: italic;">信件将在场景总结后生成...</p>';
+    document.getElementById('npc-letter').classList.remove('loading');
     document.getElementById('next-scene').innerHTML = '<p>正在生成下一幕...</p>';
     document.getElementById('next-scene').classList.add('loading');
     document.getElementById('next-scene-btn').disabled = true;
@@ -931,6 +944,12 @@ ${state.modules.story.jsonMode ?
 
         // 显示下一幕
         displayNextScene(storyResponse, state.modules.story.jsonMode, updatedStorySummary);
+
+        // 生成信件（如果启用）
+        if (state.modules.letter.enabled) {
+            console.log('🔧 开始生成NPC信件...');
+            generateNPCLetter(chatHistoryText, updatedStorySummary);
+        }
 
     } catch (error) {
         console.error('生成总结/故事错误:', error);
@@ -1012,6 +1031,146 @@ function displayNextScene(response, isJson, updatedStorySummary) {
 
     // 启用下一幕按钮
     document.getElementById('next-scene-btn').disabled = false;
+}
+
+// 生成NPC信件
+async function generateNPCLetter(chatHistory, sceneSummary) {
+    const letterContainer = document.getElementById('npc-letter');
+    
+    // 显示加载状态
+    letterContainer.classList.add('loading');
+    letterContainer.innerHTML = '<p>📝 正在撰写信件...</p>';
+    
+    try {
+        const letterPrompt = `
+故事总结：${sceneSummary}
+
+对话记录：
+${chatHistory}
+
+NPC列表：${state.scene.npcList}
+
+请选择一个最合适的NPC，以TA的口吻给玩家写一封信，描述对话后发生的事情。
+
+信件要求：
+1. 选择对话中最活跃或与玩家互动最多的NPC
+2. 使用第一人称（"我"）
+3. 描述对话后的想法、感受或发生的事
+4. 保持NPC的性格和说话风格
+5. 字数控制在200-400字
+
+${state.modules.letter.jsonMode ? 
+`返回JSON格式：
+{
+  "npc_name": "NPC名字",
+  "letter_content": "信件内容"
+}` : 
+`返回格式：
+【来信者】NPC名字
+
+【信件内容】
+信件正文...`}
+`;
+
+        const letterResponse = await callOpenAI(
+            state.modules.letter.prompt,
+            letterPrompt,
+            state.modules.letter.jsonMode
+        );
+
+        // 显示信件
+        displayNPCLetter(letterResponse, state.modules.letter.jsonMode);
+
+    } catch (error) {
+        console.error('生成信件错误:', error);
+        letterContainer.classList.remove('loading');
+        letterContainer.innerHTML = '<p style="color: #e74c3c;">信件生成失败</p>';
+    }
+}
+
+// 显示NPC信件
+function displayNPCLetter(response, isJson) {
+    const letterContainer = document.getElementById('npc-letter');
+    letterContainer.classList.remove('loading');
+
+    let html = '<div class="letter-content">';
+
+    if (isJson) {
+        try {
+            const data = JSON.parse(response);
+            html += `
+                <div class="letter-header">
+                    <span class="letter-icon">✉️</span>
+                    <h3>来自 ${escapeHtml(data.npc_name)} 的信</h3>
+                </div>
+                <div class="letter-body">
+                    ${escapeHtml(data.letter_content).replace(/\n/g, '<br>')}
+                </div>
+                <div class="letter-footer">
+                    —— ${escapeHtml(data.npc_name)}
+                </div>
+            `;
+        } catch (error) {
+            console.error('JSON解析错误:', error);
+            html += formatTextLetter(response);
+        }
+    } else {
+        html += formatTextLetter(response);
+    }
+
+    html += '</div>';
+    letterContainer.innerHTML = html;
+}
+
+// 格式化文本格式的信件
+function formatTextLetter(text) {
+    const nameMatch = text.match(/【来信者】(.+?)[\n\r]/);
+    const contentMatch = text.match(/【信件内容】\s*([\s\S]*)/);
+
+    let html = '';
+
+    if (nameMatch) {
+        const npcName = nameMatch[1].trim();
+        html += `
+            <div class="letter-header">
+                <span class="letter-icon">✉️</span>
+                <h3>来自 ${escapeHtml(npcName)} 的信</h3>
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="letter-header">
+                <span class="letter-icon">✉️</span>
+                <h3>NPC来信</h3>
+            </div>
+        `;
+    }
+
+    if (contentMatch) {
+        const content = contentMatch[1].trim();
+        html += `
+            <div class="letter-body">
+                ${escapeHtml(content).replace(/\n/g, '<br>')}
+            </div>
+        `;
+
+        if (nameMatch) {
+            html += `
+                <div class="letter-footer">
+                    —— ${escapeHtml(nameMatch[1].trim())}
+                </div>
+            `;
+        }
+    } else {
+        // 如果格式不匹配，直接显示原文
+        html += `
+            <div class="letter-body">
+                ${escapeHtml(text).replace(/\n/g, '<br>')}
+            </div>
+        `;
+    }
+
+    return html;
 }
 
 // 下一幕按钮
@@ -1240,6 +1399,7 @@ console.log('🔧 正在初始化 JSON Mode 自动提示...');
 setupJsonModeAutoHint('module1-prompt', 'module1-json');
 setupJsonModeAutoHint('module2-prompt', 'module2-json');
 setupJsonModeAutoHint('module3-prompt', 'module3-json');
+setupJsonModeAutoHint('module5-prompt', 'module5-json');
 console.log('✅ JSON Mode 自动提示已启用');
 
 console.log('AI RPG 测试系统已加载');

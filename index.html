@@ -132,6 +132,39 @@ NPC初始对话格式要求：
                             </label>
                         </div>
                     </div>
+
+                    <!-- 信件模块 -->
+                    <div class="module-config">
+                        <h3>Module 5: 信件模块 ✉️</h3>
+                        <div class="form-group">
+                            <label for="module5-prompt">System Prompt:</label>
+                            <textarea id="module5-prompt" rows="5" placeholder="输入信件模块的 system prompt">你是一个富有文学素养的作家，擅长以NPC的口吻撰写生动的信件。
+
+你的任务是根据对话内容和故事发展，以某个NPC的视角写一封信给玩家。
+
+信件要求：
+1. 选择对话中最活跃或与玩家互动最多的NPC作为来信者
+2. 使用第一人称（"我"）以NPC的口吻写作
+3. 描述对话后NPC的想法、感受或发生的事情
+4. 保持NPC的性格特征和说话风格
+5. 语言生动、富有情感，像真实的私人信件
+6. 字数控制在200-400字
+7. 可以包含对未来的展望或给玩家的建议</textarea>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" id="module5-json">
+                                启用 JSON Mode
+                            </label>
+                            <span style="margin-left: 10px; font-size: 0.85em; color: #666;">（勾选后自动添加JSON提示）</span>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" id="module5-enabled" checked>
+                                启用信件生成
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
                 <button id="start-btn" class="primary-btn">开始</button>
@@ -208,6 +241,13 @@ NPC初始对话格式要求：
                     <h2>场景总结</h2>
                     <div id="scene-summary" class="content-box loading">
                         <p>正在生成总结...</p>
+                    </div>
+                </div>
+
+                <div class="summary-section">
+                    <h2>NPC来信 ✉️</h2>
+                    <div id="npc-letter" class="content-box letter-box">
+                        <p style="color: #7f8c8d; font-style: italic;">信件将在场景总结后生成...</p>
                     </div>
                 </div>
 
