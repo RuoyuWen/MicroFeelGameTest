@@ -8,6 +8,7 @@ from state_manager import (
 )
 from models import NPC
 from config import DEFAULT_PROMPTS
+from sample_data import SAMPLE_NPCS
 
 
 def render():
@@ -48,6 +49,31 @@ def render():
             update_prompt("npc_generate_background", prompt_bg)
             npc_module.update_prompt("npc_generate_background", prompt_bg)
             st.success("Prompt已保存")
+    
+    st.markdown("---")
+    
+    # 快速填充示例数据
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📦 快速填充示例NPC（3个）", use_container_width=True):
+            existing_npcs = get_npcs()
+            if len(existing_npcs) == 0:
+                for npc in SAMPLE_NPCS[:3]:
+                    save_npc(npc)
+                st.success("已添加3个示例NPC！")
+                st.rerun()
+            else:
+                st.warning("已有NPC数据，请先清空或手动添加")
+    with col2:
+        if st.button("📦 快速填充所有示例NPC（5个）", use_container_width=True):
+            existing_npcs = get_npcs()
+            if len(existing_npcs) == 0:
+                for npc in SAMPLE_NPCS:
+                    save_npc(npc)
+                st.success("已添加5个示例NPC！")
+                st.rerun()
+            else:
+                st.warning("已有NPC数据，请先清空或手动添加")
     
     st.markdown("---")
     

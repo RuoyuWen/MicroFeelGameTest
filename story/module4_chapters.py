@@ -94,100 +94,218 @@ def render():
     
     chapters = get_chapters()
     
+    # 检查是否需要调整章节内容（插入新章节后）
+    if st.session_state.get("need_adjust_chapters", False) and chapters:
+        st.info("💡 检测到新插入的章节，建议使用'整体优化'功能来调整所有章节内容，使其更加连贯。")
+        if st.button("立即调整所有章节", key="auto_adjust_chapters"):
+            with st.spinner("AI正在调整章节内容以适应新的顺序..."):
+                try:
+                    chapters_dict = [
+                        {
+                            "title": ch.title,
+                            "content": ch.content,
+                            "order": ch.order
+                        }
+                        for ch in chapters
+                    ]
+                    
+                    refined_chapters = chapter_module.refine_all_chapters(chapters_dict)
+                    
+                    # 更新章节
+                    for i, refined in enumerate(refined_chapters):
+                        if i < len(chapters):
+                            chapters[i].content = refined.get("content", chapters[i].content)
+                            chapters[i].title = refined.get("title", chapters[i].title)
+                    
+                    save_chapters(chapters)
+                    st.session_state.need_adjust_chapters = False
+                    st.success("章节已调整！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"调整失败: {str(e)}")
+    
     # 如果还没有章节，生成初始三章
     if not chapters:
         st.subheader("生成初始章节")
-        if st.button("生成三章故事", type="primary"):
-            with st.spinner("AI正在生成章节..."):
-                try:
-                    chapters_data = chapter_module.generate_chapters(
-                        story.content,
-                        selected_npcs=selected_npcs,
-                        selected_locations=selected_locations
-                    )
-                    # 转换为Chapter对象，确保数据格式正确
-                    chapters = []
-                    for i, ch in enumerate(chapters_data):
-                        # 确保title和content都是字符串
-                        title = str(ch.get("title", f"第{i+1}章"))
-                        content = str(ch.get("content", ""))
-                        
-                        # 如果content为空，使用默认内容
-                        if not content or content.strip() == "":
-                            content = f"第{i+1}章的内容待完善..."
-                        
-                        chapters.append(Chapter(
-                            title=title,
-                            content=content,
-                            order=i
-                        ))
-                    save_chapters(chapters)
-                    st.success("章节生成成功！")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"生成失败: {str(e)}")
-                    import traceback
-                    st.code(traceback.format_exc())
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🤖 AI生成三章故事", type="primary", use_container_width=True):
+                with st.spinner("AI正在生成章节..."):
+                    try:
+                        chapters_data = chapter_module.generate_chapters(
+                            story.content,
+                            selected_npcs=selected_npcs,
+                            selected_locations=selected_locations
+                        )
+                        # 转换为Chapter对象，确保数据格式正确
+                        chapters = []
+                        for i, ch in enumerate(chapters_data):
+                            # 确保title和content都是字符串
+                            title = str(ch.get("title", ""))
+                            content = str(ch.get("content", ""))
+                            
+                            # 如果content为空，使用默认内容
+                            if not content or content.strip() == "":
+                                content = f"章节内容待完善..."
+                            
+                            # 确保标题不是"第X章"格式，使用描述性标题
+                            if not title or title.strip() == "" or (title.startswith("第") and "章" in title):
+                                # 如果AI返回了编号格式或空标题，使用默认描述性标题
+                                default_titles = ["开端", "发展", "结局"]
+                                title = default_titles[i] if i < len(default_titles) else f"章节 {i+1}"
+                            title = title.strip()
+                            
+                            chapters.append(Chapter(
+                                title=title,
+                                content=content,
+                                order=i
+                            ))
+                        save_chapters(chapters)
+                        st.success("章节生成成功！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"生成失败: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
+        with col2:
+            if st.button("➕ 手动创建章节", use_container_width=True):
+                new_chapter = Chapter(
+                    title="新章节",
+                    content="",
+                    order=0
+                )
+                save_chapters([new_chapter])
+                st.success("已创建新章节！")
+                st.rerun()
     else:
         # 显示和管理章节
         st.subheader("章节管理")
         
-        # 排序章节
+        # 排序章节，确保order连续
         chapters = sorted(chapters, key=lambda x: x.order)
+        # 重新分配order，确保连续（0, 1, 2, ...）
+        for i, ch in enumerate(chapters):
+            ch.order = i
         
         # 显示每个章节
         for i, chapter in enumerate(chapters):
             with st.expander(f"📖 {chapter.title}", expanded=False):
-                chapter_content = chapter.content
+                # 编辑章节标题
+                edited_title = st.text_input(
+                    "章节标题",
+                    value=chapter.title,
+                    key=f"chapter_title_{i}"
+                )
                 
                 # 编辑章节内容
+                chapter_content = chapter.content
                 edited_content = st.text_area(
-                    f"章节内容 {i+1}",
+                    f"章节内容",
                     value=chapter_content,
                     height=200,
                     key=f"chapter_content_{i}"
                 )
                 
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
-                    if st.button(f"保存修改", key=f"save_chapter_{i}"):
+                    if st.button(f"💾 保存", key=f"save_chapter_{i}"):
+                        chapters[i].title = edited_title.strip() if edited_title.strip() else chapter.title
                         chapters[i].content = edited_content
                         save_chapters(chapters)
                         st.success("章节已保存")
                         st.rerun()
                 
                 with col2:
-                    if st.button(f"AI优化", key=f"refine_chapter_{i}"):
+                    if st.button(f"✨ AI优化", key=f"refine_chapter_{i}"):
                         with st.spinner("AI正在优化章节..."):
                             try:
                                 prev_content = chapters[i-1].content if i > 0 else ""
                                 next_content = chapters[i+1].content if i < len(chapters) - 1 else ""
+                                prev_title = chapters[i-1].title if i > 0 else ""
+                                next_title = chapters[i+1].title if i < len(chapters) - 1 else ""
                                 
-                                refined = chapter_module.refine_chapter(
-                                    prev_content,
-                                    edited_content,
-                                    next_content
-                                )
+                                # 判断是否是新插入的章节（内容较少）
+                                # 如果内容少于100字，使用完善功能；否则使用优化功能
+                                if len(edited_content.strip()) < 100:
+                                    # 新章节，基于已有内容进行完善和扩展（传递章节顺序信息）
+                                    refined = chapter_module.refine_inserted_chapter(
+                                        prev_content,
+                                        edited_content,
+                                        next_content,
+                                        chapter_index=i+1,
+                                        total_chapters=len(chapters),
+                                        previous_title=prev_title,
+                                        current_title=edited_title,
+                                        next_title=next_title
+                                    )
+                                    st.info("💡 检测到新章节，AI将基于您已写的内容进行完善和扩展")
+                                else:
+                                    # 已有完整内容，进行优化（传递章节顺序信息）
+                                    refined = chapter_module.refine_chapter(
+                                        prev_content,
+                                        edited_content,
+                                        next_content,
+                                        chapter_index=i+1,
+                                        total_chapters=len(chapters),
+                                        previous_title=prev_title,
+                                        current_title=edited_title,
+                                        next_title=next_title
+                                    )
+                                
                                 st.session_state[f"refined_chapter_{i}"] = refined
                                 st.success("优化完成！")
                             except Exception as e:
                                 st.error(f"优化失败: {str(e)}")
                 
                 with col3:
-                    if st.button(f"在此后插入新章节", key=f"insert_after_{i}"):
+                    if st.button(f"➕ 在此后插入", key=f"insert_after_{i}"):
                         # 插入新章节
                         new_chapter = Chapter(
-                            title=f"第{len(chapters)+1}章",
+                            title="新章节",
                             content="",
                             order=i+1
                         )
-                        # 更新后续章节的order
+                        # 更新后续章节的order（自动调整编号）
                         for j in range(i+1, len(chapters)):
                             chapters[j].order = chapters[j].order + 1
                         chapters.insert(i+1, new_chapter)
                         save_chapters(chapters)
+                        # 标记需要调整其他章节内容
+                        st.session_state.need_adjust_chapters = True
                         st.rerun()
+                
+                with col4:
+                    if st.button(f"➕ 在此前插入", key=f"insert_before_{i}"):
+                        # 在当前章节之前插入新章节
+                        new_chapter = Chapter(
+                            title="新章节",
+                            content="",
+                            order=i
+                        )
+                        # 更新当前及后续章节的order
+                        for j in range(i, len(chapters)):
+                            chapters[j].order = chapters[j].order + 1
+                        chapters.insert(i, new_chapter)
+                        save_chapters(chapters)
+                        # 标记需要调整其他章节内容
+                        st.session_state.need_adjust_chapters = True
+                        st.rerun()
+                
+                with col5:
+                    if st.button(f"🗑️ 删除", key=f"delete_chapter_{i}", type="secondary"):
+                        # 确认删除
+                        if len(chapters) > 1:
+                            # 删除章节
+                            deleted_chapter = chapters.pop(i)
+                            # 重新分配order，确保连续
+                            for j, ch in enumerate(chapters):
+                                ch.order = j
+                            save_chapters(chapters)
+                            st.success(f"已删除章节：{deleted_chapter.title}")
+                            st.rerun()
+                        else:
+                            st.warning("至少需要保留一个章节！")
                 
                 # 显示优化后的内容
                 if f"refined_chapter_{i}" in st.session_state:

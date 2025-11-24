@@ -297,10 +297,13 @@ class ChapterModule(AIModule):
                     # 如果content不是字符串，转换为字符串
                     content = str(content)
                 
-                # 确保title存在
-                title = ch.get("title", ch.get("name", f"第{i+1}章"))
-                if not isinstance(title, str):
-                    title = str(title)
+                # 确保title存在，使用描述性标题而不是编号
+                title = ch.get("title", ch.get("name", ""))
+                if not isinstance(title, str) or not title.strip():
+                    # 如果没有标题，使用默认的描述性标题
+                    default_titles = ["开端", "发展", "结局"]
+                    title = default_titles[i] if i < len(default_titles) else f"章节 {i+1}"
+                title = str(title).strip()
                 
                 cleaned_chapters.append({
                     "title": title,
@@ -324,19 +327,22 @@ class ChapterModule(AIModule):
         words = story.split()
         chunk_size = len(words) // 3
         
+        default_titles = ["开端", "发展", "结局"]
         chapters = []
         for i in range(3):
             start = i * chunk_size
             end = (i + 1) * chunk_size if i < 2 else len(words)
             content = " ".join(words[start:end])
             chapters.append({
-                "title": f"第{i+1}章",
+                "title": default_titles[i] if i < len(default_titles) else f"章节 {i+1}",
                 "content": content
             })
         
         return chapters
     
-    def refine_chapter(self, previous_chapter: str, current_chapter: str, next_chapter: str) -> str:
+    def refine_chapter(self, previous_chapter: str, current_chapter: str, next_chapter: str, 
+                      chapter_index: int = 0, total_chapters: int = 1,
+                      previous_title: str = "", current_title: str = "", next_title: str = "") -> str:
         """
         优化章节内容
         
@@ -344,18 +350,30 @@ class ChapterModule(AIModule):
             previous_chapter: 前一章内容
             current_chapter: 当前章节内容
             next_chapter: 后一章内容
+            chapter_index: 当前章节索引（从1开始）
+            total_chapters: 总章节数
+            previous_title: 前一章标题
+            current_title: 当前章节标题
+            next_title: 后一章标题
             
         Returns:
             优化后的章节内容
         """
         prompt = self.prompts["chapter_refine"].format(
-            previous_chapter=previous_chapter,
+            previous_chapter=previous_chapter or "（无前一章）",
             current_chapter=current_chapter,
-            next_chapter=next_chapter
+            next_chapter=next_chapter or "（无后一章）",
+            chapter_index=chapter_index,
+            total_chapters=total_chapters,
+            previous_title=previous_title or "（无前一章）",
+            current_title=current_title or "当前章节",
+            next_title=next_title or "（无后一章）"
         )
         return self._call_openai(prompt, temperature=0.7)
     
-    def refine_inserted_chapter(self, previous_chapter: str, current_chapter: str, next_chapter: str) -> str:
+    def refine_inserted_chapter(self, previous_chapter: str, current_chapter: str, next_chapter: str,
+                                chapter_index: int = 0, total_chapters: int = 1,
+                                previous_title: str = "", current_title: str = "", next_title: str = "") -> str:
         """
         完善插入的章节
         
@@ -363,14 +381,24 @@ class ChapterModule(AIModule):
             previous_chapter: 前一章内容
             current_chapter: 当前章节部分内容
             next_chapter: 后一章内容
+            chapter_index: 当前章节索引（从1开始）
+            total_chapters: 总章节数
+            previous_title: 前一章标题
+            current_title: 当前章节标题
+            next_title: 后一章标题
             
         Returns:
             完善后的章节内容
         """
         prompt = self.prompts["insert_chapter_refine"].format(
-            previous_chapter=previous_chapter,
+            previous_chapter=previous_chapter or "（无前一章）",
             current_chapter=current_chapter,
-            next_chapter=next_chapter
+            next_chapter=next_chapter or "（无后一章）",
+            chapter_index=chapter_index,
+            total_chapters=total_chapters,
+            previous_title=previous_title or "（无前一章）",
+            current_title=current_title or "新章节",
+            next_title=next_title or "（无后一章）"
         )
         return self._call_openai(prompt, temperature=0.7)
     
@@ -385,12 +413,25 @@ class ChapterModule(AIModule):
             优化后的章节列表
         """
         refined_chapters = []
+        total_chapters = len(chapters)
+        
         for i, chapter in enumerate(chapters):
             prev = chapters[i-1]["content"] if i > 0 else ""
             curr = chapter["content"]
             next_ch = chapters[i+1]["content"] if i < len(chapters) - 1 else ""
             
-            refined_content = self.refine_chapter(prev, curr, next_ch)
+            prev_title = chapters[i-1].get("title", "") if i > 0 else ""
+            curr_title = chapter.get("title", "")
+            next_title = chapters[i+1].get("title", "") if i < len(chapters) - 1 else ""
+            
+            refined_content = self.refine_chapter(
+                prev, curr, next_ch,
+                chapter_index=i+1,
+                total_chapters=total_chapters,
+                previous_title=prev_title,
+                current_title=curr_title,
+                next_title=next_title
+            )
             refined_chapters.append({
                 "title": chapter["title"],
                 "content": refined_content,

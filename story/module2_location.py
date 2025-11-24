@@ -8,6 +8,7 @@ from state_manager import (
 )
 from models import Location
 from config import DEFAULT_PROMPTS
+from sample_data import SAMPLE_LOCATIONS
 
 
 def render():
@@ -37,6 +38,30 @@ def render():
             update_prompt("location_generate", prompt_location)
             location_module.update_prompt("location_generate", prompt_location)
             st.success("Prompt已保存")
+    
+    st.markdown("---")
+    
+    # 快速填充示例数据
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📦 快速填充示例地点（1个）", use_container_width=True):
+            existing_locations = get_locations()
+            if len(existing_locations) == 0:
+                save_location(SAMPLE_LOCATIONS[0])
+                st.success("已添加1个示例地点！")
+                st.rerun()
+            else:
+                st.warning("已有地点数据，请先清空或手动添加")
+    with col2:
+        if st.button("📦 快速填充所有示例地点（5个）", use_container_width=True):
+            existing_locations = get_locations()
+            if len(existing_locations) == 0:
+                for loc in SAMPLE_LOCATIONS:
+                    save_location(loc)
+                st.success("已添加5个示例地点！")
+                st.rerun()
+            else:
+                st.warning("已有地点数据，请先清空或手动添加")
     
     st.markdown("---")
     
